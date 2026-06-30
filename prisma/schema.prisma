@@ -1,0 +1,450 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  CASHIER
+  TEACHER
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  CLICK
+}
+
+enum PaymentStatus {
+  PAID
+  PARTIAL
+  DEBT
+  CANCELLED
+}
+
+enum StudentStatus {
+  ACTIVE
+  IN_DEBT
+  LEFT
+}
+
+enum StudentClass {
+  GRADES_1_4
+  GRADES_5_7
+  GRADES_8_9
+  GRADE_10
+  GRADE_11
+  CERTIFICATE
+}
+
+enum TeacherLevel {
+  LEVEL_1
+  LEVEL_2
+  LEVEL_3
+  LEVEL_4
+}
+
+model User {
+  id       Int     @id @default(autoincrement())
+  fullname String
+  username String  @unique
+  phone    String? @unique
+  password String
+  role     Role    @default(TEACHER)
+  isActive Boolean @default(true)
+
+  groups               Group[]
+  payments             Payment[]             @relation("ReceivedBy")
+  logs                 AuditLog[]
+  attendances          Attendance[]
+  teacherSubjectLevels TeacherSubjectLevel[]
+  staffAttendances     StaffAttendance[]
+  handoversFrom        CashHandover[]    @relation("HandoverFrom")
+  handoversTo          CashHandover[]    @relation("HandoverTo")
+  teacherPayments      TeacherPayment[]  @relation("TeacherPayments")
+  paidTeacherPayments  TeacherPayment[]  @relation("PaidByPayments")
+
+  externalId     String? @unique
+  faceImage      String?
+  syncedToDevice Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fullname])
+}
+
+model Student {
+  id           Int           @id @default(autoincrement())
+  fullname     String
+  phone        String?
+  username     String        @unique
+  status       StudentStatus @default(ACTIVE)
+  balance      Float         @default(0)
+  studentClass StudentClass?
+
+  schoolClassId Int?
+  schoolClass   SchoolClass? @relation(fields: [schoolClassId], references: [id])
+
+  groups     StudentGroup[]
+  attendance Attendance[]
+  payments   Payment[]
+  grades     Grade[]
+  class      Class[]
+
+  externalId     String? @unique
+  faceImage      String?
+  syncedToDevice Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fullname])
+  @@index([phone])
+  @@index([studentClass])
+  @@index([schoolClassId])
+}
+
+enum DeviceType {
+  FACE_TERMINAL
+  FINGERPRINT
+  CARD_READER
+}
+
+enum DeviceStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+  SYNCING
+}
+
+model Device {
+  id           Int          @id @default(autoincrement())
+  name         String
+  type         DeviceType   @default(FACE_TERMINAL)
+  ipAddress    String
+  port         Int          @default(80)
+  username     String       @default("admin")
+  password     String
+  doorCount    Int          @default(1)
+  serialNumber String?      @unique
+  location     String?
+  lastSync     DateTime?
+  lastOnline   DateTime?
+  status       DeviceStatus @default(OFFLINE)
+  isActive     Boolean      @default(true)
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  logs      DeviceLog[]
+
+  @@unique([ipAddress, port])
+  @@index([status])
+  @@index([isActive])
+}
+
+model DeviceLog {
+  id             Int      @id @default(autoincrement())
+  externalUserId String
+  timestamp      DateTime
+  direction      String
+  deviceSn       String
+  deviceId       Int?
+  device         Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  isProcessed    Boolean  @default(false)
+  attendance     Attendance?
+
+  @@index([timestamp])
+  @@index([externalUserId])
+  @@index([deviceId])
+  @@index([isProcessed])
+}
+
+model Subject {
+  id       Int     @id @default(autoincrement())
+  name     String  @unique
+  isActive Boolean @default(true)
+
+  courses              Course[]
+  teacherSubjectLevels TeacherSubjectLevel[]
+  pricingTariffs       PricingTariff[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+model Course {
+  id        Int      @id @default(autoincrement())
+  name      String
+  price     Float
+  subjectId Int?
+  subject   Subject? @relation(fields: [subjectId], references: [id])
+  isActive  Boolean  @default(true)
+  groups    Group[]
+
+  @@index([subjectId])
+}
+
+model Group {
+  id        Int    @id @default(autoincrement())
+  name      String
+  courseId  Int
+  course    Course @relation(fields: [courseId], references: [id])
+  teacherId Int
+  teacher   User   @relation(fields: [teacherId], references: [id])
+
+  teacherRate Float?
+  schedule    Json
+  roomNumber  String?
+  paymentDay  Int?
+  isActive    Boolean        @default(true)
+  students    StudentGroup[]
+  lessons     Lesson[]
+  payments    Payment[]
+  grades      Grade[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([teacherId])
+}
+
+model StudentGroup {
+  id        Int      @id @default(autoincrement())
+  studentId Int
+  student   Student  @relation(fields: [studentId], references: [id])
+  groupId   Int
+  group     Group    @relation(fields: [groupId], references: [id])
+  joinedAt  DateTime @default(now())
+  discount  Float    @default(0)
+
+  @@unique([studentId, groupId])
+}
+
+enum AttendanceSource {
+  MANUAL
+  HIKVISION
+}
+
+model Lesson {
+  id             Int          @id @default(autoincrement())
+  groupId        Int
+  group          Group        @relation(fields: [groupId], references: [id])
+  date           DateTime     @db.Date
+  wasHeld        Boolean      @default(true)
+  teacherSkipped Boolean      @default(false)
+  attendance     Attendance[]
+
+  @@index([date])
+}
+
+model Attendance {
+  id          Int              @id @default(autoincrement())
+  lessonId    Int
+  lesson      Lesson           @relation(fields: [lessonId], references: [id])
+  studentId   Int?
+  student     Student?         @relation(fields: [studentId], references: [id])
+  userId      Int?
+  user        User?            @relation(fields: [userId], references: [id])
+  isPresent   Boolean          @default(false)
+  timestamp   DateTime         @default(now())
+  source      AttendanceSource @default(MANUAL)
+  deviceLogId Int?             @unique
+  deviceLog   DeviceLog?       @relation(fields: [deviceLogId], references: [id], onDelete: SetNull)
+
+  @@index([lessonId])
+  @@index([studentId])
+  @@index([userId])
+  @@index([source])
+}
+
+model Class {
+  id        Int      @id @default(autoincrement())
+  name      String
+  student   Student? @relation(fields: [studentId], references: [id])
+  studentId Int?
+}
+
+model Grade {
+  id        Int      @id @default(autoincrement())
+  studentId Int
+  student   Student  @relation(fields: [studentId], references: [id])
+  groupId   Int?
+  group     Group?   @relation(fields: [groupId], references: [id])
+  subject   String
+  score     Int
+  comment   String?
+  date      DateTime @default(now())
+
+  @@index([studentId])
+  @@index([groupId])
+}
+
+model SchoolClass {
+  id             Int     @id @default(autoincrement())
+  name           String  @unique
+  price          Float
+  teacherShareL1 Float
+  teacherShareL2 Float
+  teacherShareL3 Float
+  teacherShareL4 Float
+  isActive       Boolean @default(true)
+
+  students Student[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+model PricingTariff {
+  id           Int          @id @default(autoincrement())
+  studentClass StudentClass
+  teacherLevel TeacherLevel
+  amount       Float
+  validFrom    DateTime     @default(now())
+  validTo      DateTime?
+  subjectId    Int?
+  subject      Subject?     @relation(fields: [subjectId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentClass, teacherLevel, subjectId, validFrom])
+  @@index([studentClass, teacherLevel])
+  @@index([validFrom, validTo])
+}
+
+model TeacherSubjectLevel {
+  id        Int          @id @default(autoincrement())
+  teacherId Int
+  teacher   User         @relation(fields: [teacherId], references: [id])
+  subjectId Int
+  subject   Subject      @relation(fields: [subjectId], references: [id])
+  level     TeacherLevel
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, subjectId])
+  @@index([teacherId])
+  @@index([subjectId])
+}
+
+model Payment {
+  id           Int           @id @default(autoincrement())
+  studentId    Int
+  student      Student       @relation(fields: [studentId], references: [id])
+  groupId      Int?
+  group        Group?        @relation(fields: [groupId], references: [id])
+  amount       Float
+  discount     Float         @default(0)
+  method       PaymentMethod
+  status       PaymentStatus @default(PAID)
+  receivedById Int
+  receivedBy   User          @relation("ReceivedBy", fields: [receivedById], references: [id])
+  description  String?
+  isCancelled  Boolean       @default(false)
+
+  periodStart   DateTime? @db.Date
+  periodEnd     DateTime? @db.Date
+  paymentType   String?
+  invoiceId     String?   @unique
+  transactionId String?   @unique
+
+  createdAt DateTime   @default(now())
+  logs      AuditLog[]
+
+  @@index([studentId])
+  @@index([groupId])
+  @@index([createdAt])
+}
+
+model StaffAttendance {
+  id       Int       @id @default(autoincrement())
+  userId   Int
+  user     User      @relation(fields: [userId], references: [id])
+  date     DateTime  @db.Date
+  checkIn  DateTime?
+  checkOut DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+}
+
+enum HandoverStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model CashHandover {
+  id         Int            @id @default(autoincrement())
+  fromUserId Int
+  fromUser   User           @relation("HandoverFrom", fields: [fromUserId], references: [id])
+  toUserId   Int
+  toUser     User           @relation("HandoverTo", fields: [toUserId], references: [id])
+  amount     Float
+  status     HandoverStatus @default(PENDING)
+  note       String?
+  approvedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([status])
+}
+
+enum TeacherPaymentType {
+  SALARY
+  ADVANCE
+}
+
+model TeacherPayment {
+  id          Int                @id @default(autoincrement())
+  teacherId   Int
+  teacher     User               @relation("TeacherPayments", fields: [teacherId], references: [id])
+  amount      Float
+  type        TeacherPaymentType
+  month       String?
+  description String?
+  paidById    Int
+  paidBy      User               @relation("PaidByPayments", fields: [paidById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([teacherId])
+  @@index([month])
+}
+
+model AuditLog {
+  id       Int    @id @default(autoincrement())
+  userId   Int
+  user     User   @relation(fields: [userId], references: [id])
+  action   String
+  table    String
+  recordId Int
+  oldValue Json?
+  newValue Json?
+
+  createdAt DateTime @default(now())
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+  paymentId Int?
+
+  @@index([userId])
+  @@index([createdAt])
+}

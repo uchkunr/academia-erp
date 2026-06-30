@@ -1,0 +1,20 @@
+{
+	"compilerOptions": {
+		"outDir": "./dist",
+		"target": "ES2021",
+		"module": "ES2022",
+		"moduleResolution": "bundler",
+		"types": ["bun-types"],
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"paths": {
+			"@*": ["./src/*"],
+			"@lib/*": ["./src/lib/*"],
+			"@modules/*": ["./src/modules/*"],
+			"@generated/*": ["./generated/*"],
+			"@config/*": ["./src/config/*"],
+			"@auth/*": ["./src/modules/auth/*"]
+		}
+	},
+	"exclude": ["dist", "client", "node_modules"]
+}
